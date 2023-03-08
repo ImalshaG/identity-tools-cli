@@ -139,10 +139,10 @@ func importApp(importFilePath string, update bool) {
 
 	var requestMethod string
 	if update {
-		log.Println("Updating app: " + filename)
+		log.Println("Updating app: " + appName)
 		requestMethod = "PUT"
 	} else {
-		log.Println("Creating app: " + filename)
+		log.Println("Creating app: " + appName)
 		requestMethod = "POST"
 	}
 
@@ -182,6 +182,8 @@ func importApp(importFilePath string, update bool) {
 		log.Println("Internal server error.")
 	case 201:
 		log.Println("Application imported successfully.")
+	case 200:
+		log.Println("Application updated successfully.")
 	}
 }
 

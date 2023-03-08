@@ -44,9 +44,9 @@ func ReplaceKeywords(fileData []byte, appName string) string {
 
 func getAppKeywordMappings(appName string) (keywordMappings map[string]interface{}) {
 
-	keywordMappings = SERVER_CONFIGS.KeywordMappings
-	if SERVER_CONFIGS.ApplicationConfigs != nil {
-		if appConfigs, ok := SERVER_CONFIGS.ApplicationConfigs[appName]; ok {
+	keywordMappings = TOOL_CONFIGS.KeywordMappings
+	if TOOL_CONFIGS.ApplicationConfigs != nil {
+		if appConfigs, ok := TOOL_CONFIGS.ApplicationConfigs[appName]; ok {
 			if appKeywordMappings, ok := appConfigs.(map[string]interface{})["KEYWORD_MAPPINGS"]; ok {
 				mergedKeywordMap := make(map[string]interface{})
 				for key, value := range keywordMappings {
