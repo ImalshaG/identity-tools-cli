@@ -29,7 +29,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -97,12 +96,6 @@ func importApp(importFilePath string, update bool) {
 	var reqUrl = utils.SERVER_CONFIGS.ServerUrl + "/t/" + utils.SERVER_CONFIGS.TenantDomain + "/api/server/v1/applications/import"
 	var err error
 
-	fmt.Println(reqUrl)
-	file, err := os.Open(importFilePath)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	filename := filepath.Base(importFilePath)
 
 	body := new(bytes.Buffer)
@@ -110,6 +103,19 @@ func importApp(importFilePath string, update bool) {
 
 	// Get file extension
 	fileExtension := filepath.Ext(filename)
+	appName := strings.TrimSuffix(filename, fileExtension)
+
+	fileBytes, err := ioutil.ReadFile(importFilePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fileData := utils.ReplaceKeywords(fileBytes, appName)
+	var buf bytes.Buffer
+	_, err = io.WriteString(&buf, fileData)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	mime.AddExtensionType(".yml", "text/yaml")
 	mime.AddExtensionType(".xml", "application/xml")
@@ -124,7 +130,7 @@ func importApp(importFilePath string, update bool) {
 		log.Fatal(err)
 	}
 
-	_, err = io.Copy(part, file)
+	_, err = io.Copy(part, &buf)
 	if err != nil {
 		log.Fatal(err)
 	}
