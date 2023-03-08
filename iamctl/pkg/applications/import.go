@@ -22,15 +22,26 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/wso2-extensions/identity-tools-cli/iamctl/pkg/utils"
+	"gopkg.in/yaml.v2"
 )
 
-func ImportAll(inputDirPath string, format string) {
+type AppConfig struct {
+	ApplicationName string `yaml:"applicationName"`
+}
+
+func ImportAll(inputDirPath string) {
 
 	var importFilePath = "."
 	if inputDirPath != "" {
@@ -44,40 +55,92 @@ func ImportAll(inputDirPath string, format string) {
 	}
 
 	var appFilePath string
+	appList := getAppNames()
 	for _, file := range files {
 		appFilePath = importFilePath + file.Name()
-		log.Println("Importing app: " + file.Name())
-		importApp(appFilePath, format)
+		fileName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+
+		// Read the content of the file.
+		fileContent, err := ioutil.ReadFile(appFilePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// Parse the YAML content.
+		var appConfig AppConfig
+		err = yaml.Unmarshal(fileContent, &appConfig)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		log.Println(appConfig.ApplicationName)
+
+		// Check if app exists.
+		var appExists bool
+		for _, app := range appList {
+			if app == appConfig.ApplicationName {
+				appExists = true
+				break
+			}
+		}
+
+		if appConfig.ApplicationName != fileName {
+			log.Println("Application name in the file " + appFilePath + " is not matching with the file name.")
+		}
+
+		importApp(appFilePath, appExists)
 	}
 }
 
-func importApp(importFilePath string, format string) {
+func importApp(importFilePath string, update bool) {
 
-	var reqUrl = utils.SERVER_CONFIGS.ServerUrl + "/t/" + utils.SERVER_CONFIGS.TenantDomain + "/api/server/v1/applications/import/" + format
+	var reqUrl = utils.SERVER_CONFIGS.ServerUrl + "/t/" + utils.SERVER_CONFIGS.TenantDomain + "/api/server/v1/applications/import"
 	var err error
 
 	fmt.Println(reqUrl)
-	fileBytes, err := ioutil.ReadFile(importFilePath)
+	file, err := os.Open(importFilePath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	extraParams := map[string]string{
-		"file": string(fileBytes),
-	}
+	filename := filepath.Base(importFilePath)
 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
 
-	for key, val := range extraParams {
-		err := writer.WriteField(key, val)
-		if err != nil {
-			log.Fatal(err)
-		}
+	// Get file extension
+	fileExtension := filepath.Ext(filename)
+
+	mime.AddExtensionType(".yml", "text/yaml")
+	mime.AddExtensionType(".xml", "application/xml")
+
+	mimeType := mime.TypeByExtension(fileExtension)
+
+	part, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": []string{fmt.Sprintf(`form-data; name="%s"; filename="%s"`, "file", filename)},
+		"Content-Type":        []string{mimeType},
+	})
+	if err != nil {
+		log.Fatal(err)
 	}
+
+	_, err = io.Copy(part, file)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	defer writer.Close()
 
-	request, err := http.NewRequest("POST", reqUrl, body)
+	var requestMethod string
+	if update {
+		log.Println("Updating app: " + filename)
+		requestMethod = "PUT"
+	} else {
+		log.Println("Creating app: " + filename)
+		requestMethod = "POST"
+	}
+
+	request, err := http.NewRequest(requestMethod, reqUrl, body)
 	request.Header.Add("Content-Type", writer.FormDataContentType())
 	request.Header.Set("Authorization", "Bearer "+utils.SERVER_CONFIGS.Token)
 	defer request.Body.Close()
@@ -107,10 +170,25 @@ func importApp(importFilePath string, format string) {
 	case 403:
 		log.Println("Forbidden request.")
 	case 409:
-		log.Println("An application with the same name already exists.")
+		log.Println("An application with the same name already exists. Please rename the file accordingly.")
+		importApp(importFilePath, true)
 	case 500:
 		log.Println("Internal server error.")
 	case 201:
 		log.Println("Application imported successfully.")
 	}
+}
+
+func getAppNames() []string {
+
+	// Get the list of applications.
+	apps := getAppList()
+
+	// Extract application names from the list.
+	var appNames []string
+	for _, app := range apps {
+		appNames = append(appNames, app.Name)
+	}
+
+	return appNames
 }
