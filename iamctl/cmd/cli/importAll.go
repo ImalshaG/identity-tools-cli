@@ -31,11 +31,10 @@ var importAllCmd = &cobra.Command{
 	Long:  `You can import all service providers`,
 	Run: func(cmd *cobra.Command, args []string) {
 		inputDirPath, _ := cmd.Flags().GetString("inputDir")
-		format, _ := cmd.Flags().GetString("format")
 		configFile, _ := cmd.Flags().GetString("config")
 
 		utils.SERVER_CONFIGS = utils.LoadServerConfigsFromFile(configFile)
-		applications.ImportAll(inputDirPath, format)
+		applications.ImportAll(inputDirPath)
 	},
 }
 
@@ -43,6 +42,5 @@ func init() {
 
 	cmd.RootCmd.AddCommand(importAllCmd)
 	importAllCmd.Flags().StringP("inputDir", "i", "", "Path to the input directory")
-	importAllCmd.Flags().StringP("format", "f", "yaml", "Format of the imported files")
 	importAllCmd.Flags().StringP("config", "c", "", "Path to the config file")
 }
