@@ -97,20 +97,29 @@ func importApp(importFilePath string, update bool) {
 	var err error
 
 	filename := filepath.Base(importFilePath)
+	fileExtension := filepath.Ext(filename)
+	appName := strings.TrimSuffix(filename, fileExtension)
+
+	var requestMethod string
+	if update {
+		log.Println("Updating app: " + appName)
+		requestMethod = "PUT"
+	} else {
+		log.Println("Creating app: " + appName)
+		requestMethod = "POST"
+	}
 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
-
-	// Get file extension
-	fileExtension := filepath.Ext(filename)
-	appName := strings.TrimSuffix(filename, fileExtension)
 
 	fileBytes, err := ioutil.ReadFile(importFilePath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// Replace keywords according to the keyword mappings added in configs.
 	fileData := utils.ReplaceKeywords(fileBytes, appName)
+
 	var buf bytes.Buffer
 	_, err = io.WriteString(&buf, fileData)
 	if err != nil {
@@ -137,15 +146,6 @@ func importApp(importFilePath string, update bool) {
 
 	defer writer.Close()
 
-	var requestMethod string
-	if update {
-		log.Println("Updating app: " + appName)
-		requestMethod = "PUT"
-	} else {
-		log.Println("Creating app: " + appName)
-		requestMethod = "POST"
-	}
-
 	request, err := http.NewRequest(requestMethod, reqUrl, body)
 	request.Header.Add("Content-Type", writer.FormDataContentType())
 	request.Header.Set("Authorization", "Bearer "+utils.SERVER_CONFIGS.Token)
@@ -167,7 +167,6 @@ func importApp(importFilePath string, update bool) {
 	}
 
 	statusCode := resp.StatusCode
-	fmt.Println(statusCode)
 	switch statusCode {
 	case 401:
 		log.Println("Unauthorized access.\nPlease check your Username and password.")

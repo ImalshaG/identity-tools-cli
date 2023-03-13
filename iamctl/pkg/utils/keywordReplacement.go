@@ -19,27 +19,35 @@
 package utils
 
 import (
-	"html/template"
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v2"
 )
 
 func ReplaceKeywords(fileData []byte, appName string) string {
 
-	// Creating a template with the variable to replace
-	tmpl, err := template.New("app").Parse(string(fileData))
-	if err != nil {
-		panic(err)
-	}
-	var buf strings.Builder
-
 	appKeywordMap := getAppKeywordMappings(appName)
 
-	// Replacing the values by executing the template
-	if err := tmpl.Execute(&buf, appKeywordMap); err != nil {
-		panic(err)
-	}
-
-	return buf.String()
+	re := regexp.MustCompile(`\${([^}]+)}`)
+	output := re.ReplaceAllStringFunc(string(fileData), func(match string) string {
+		keyword := strings.Trim(match, "${}")
+		if val, ok := appKeywordMap[keyword]; ok {
+			if val, ok := val.(string); ok {
+				return string(val)
+			} else {
+				log.Printf("Keyword %s is not a string", keyword)
+			}
+		} else {
+			log.Printf("Removing the keyword %s from exported file, since it is not defined in the configs.", keyword)
+		}
+		return ""
+	})
+	return output
 }
 
 func getAppKeywordMappings(appName string) (keywordMappings map[string]interface{}) {
@@ -60,4 +68,201 @@ func getAppKeywordMappings(appName string) (keywordMappings map[string]interface
 		}
 	}
 	return keywordMappings
+}
+
+// Functions for keyword replacement during export
+
+var arrayIdentifiers = map[string]string{
+	"inboundAuthenticationRequestConfigs": "inboundAuthKey",
+	"spProperties":                        "name",
+	"subElement":                          "name",
+}
+
+func AddKeywords(exportedData []byte, localFilePath string) []byte {
+
+	// Load local file data as a yaml object
+	localFileData, err := loadYAMLFile(localFilePath)
+	if err != nil {
+		log.Printf("failed to load YAML file: %v", err)
+	}
+
+	if localFileData != nil {
+		// Get keyword locations in local file
+		keywordLocations := getKeywordLocations(localFileData, []string{})
+		fmt.Println("Keyword locations: ", keywordLocations)
+		// Load exported app data as a yaml object
+		var exportedYaml interface{}
+		err = yaml.Unmarshal(exportedData, &exportedYaml)
+
+		if err != nil {
+			fmt.Println("Error: ", err)
+		}
+		// Compare the fields with keywords
+		exportedYaml = compareFieldsWithKeywords(localFileData, exportedYaml, keywordLocations)
+
+		exportedData, err = yaml.Marshal(exportedYaml)
+		if err != nil {
+			panic(err)
+		}
+	}
+	return exportedData
+}
+
+func loadYAMLFile(filename string) (interface{}, error) {
+	yamlFile, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	var data interface{}
+	err = yaml.Unmarshal(yamlFile, &data)
+
+	if err != nil {
+		fmt.Println("Error: ", err)
+		return nil, err
+	}
+	return data, nil
+}
+
+func getKeywordLocations(fileData interface{}, path []string) map[string][]string {
+
+	var keys = make(map[string][]string)
+	switch v := fileData.(type) {
+	case map[interface{}]interface{}:
+		for k, val := range v {
+			newPath := append(path, fmt.Sprintf("%v", k))
+			for path, key := range getKeywordLocations(val, newPath) {
+				keys[path] = key
+			}
+		}
+	case []interface{}:
+		for _, val := range v {
+			newPath := append(path, resolvePathWithIdentifiers(path[len(path)-1], val, arrayIdentifiers))
+			for path, key := range getKeywordLocations(val, newPath) {
+				keys[path] = key
+			}
+		}
+	case string:
+		containKeywords, keywords := getKeywords(fileData.(string))
+		if containKeywords {
+			thisPath := strings.Join(path, ".")
+			for _, match := range keywords {
+				keys[thisPath] = append(keys[thisPath], match[1])
+			}
+		}
+	}
+	return keys
+}
+
+func resolvePathWithIdentifiers(arrayName string, element interface{}, identifiers map[string]string) string {
+
+	elementMap, ok := element.(map[interface{}]interface{})
+	if !ok {
+		fmt.Printf("cannot convert %T to map[string]string", element)
+	}
+	identifier := identifiers[arrayName]
+	identifierValue := elementMap[identifier]
+	return fmt.Sprintf("[%s=%s]", identifier, identifierValue)
+}
+
+func compareFieldsWithKeywords(localFileData interface{}, exportedFileData interface{}, keywordLocations map[string][]string) interface{} {
+
+	for location, keyword := range keywordLocations {
+
+		localValue := GetValue(localFileData, location)
+		localReplacedValue := replaceKeywords(localValue, keyword, TOOL_CONFIGS.KeywordMappings)
+		exportedValue := GetValue(exportedFileData, location)
+
+		if exportedValue != localReplacedValue {
+			log.Printf("Warning: Keywords at %s field in the local file will be replaced by exported content.", location)
+			log.Println("Local Value with Keyword Replaced: ", localReplacedValue)
+			log.Println("Exported Value: ", exportedValue)
+		} else {
+			fmt.Printf("Values at %s are equal\n", location)
+			ReplaceValue(exportedFileData, location, localValue)
+		}
+	}
+	// fmt.Println("Exported Value: ", exportedFileData)
+	return exportedFileData
+}
+
+func GetValue(data interface{}, key string) string {
+
+	parts := strings.Split(key, ".")
+	for _, part := range parts {
+		switch v := data.(type) {
+		case map[interface{}]interface{}:
+			data = v[part]
+		case map[string]interface{}:
+			data = v[part]
+		case []interface{}:
+			index, err := getArrayIndex(v, part)
+			if err == nil {
+				if len(v) > index {
+					data = v[index]
+				}
+			}
+		default:
+			return ""
+		}
+	}
+	return data.(string)
+}
+
+func ReplaceValue(data interface{}, key string, replacement string) interface{} {
+
+	parts := strings.Split(key, ".")
+	for i, part := range parts {
+		if i == len(parts)-1 {
+			data.(map[interface{}]interface{})[part] = replacement
+		} else {
+			switch v := data.(type) {
+			case map[interface{}]interface{}:
+				data = v[part]
+			case map[string]interface{}:
+				data = v[part]
+			case []interface{}:
+				index, err := getArrayIndex(v, part)
+				if err == nil {
+					if len(v) > index {
+						data = v[index]
+					}
+				}
+			default:
+				return nil
+			}
+		}
+	}
+	return data
+}
+
+func getKeywords(data string) (bool, [][]string) {
+
+	re := regexp.MustCompile(`\${([^}]+)}`)
+	matches := re.FindAllStringSubmatch(data, -1)
+	return (len(matches) > 0), matches
+}
+
+func replaceKeywords(data string, keywords []string, keywordMapping map[string]interface{}) (replacedData string) {
+
+	replacedData = data
+	for _, keyword := range keywords {
+		replacedData = strings.ReplaceAll(replacedData, "${"+keyword+"}", keywordMapping[keyword].(string))
+	}
+	return replacedData
+}
+
+func getArrayIndex(arrayMap []interface{}, elementIdentifier string) (int, error) {
+
+	for k, v := range arrayMap {
+		if strings.HasPrefix(elementIdentifier, "[") && strings.HasSuffix(elementIdentifier, "]") {
+			identifier := elementIdentifier[1 : len(elementIdentifier)-1]
+			parts := strings.SplitN(identifier, "=", 2)
+			if v.(map[interface{}]interface{})[parts[0]] == parts[1] {
+				return k, nil
+			}
+		} else {
+			fmt.Println("String is not in the expected format")
+		}
+	}
+	return -1, errors.New("Element not found")
 }
