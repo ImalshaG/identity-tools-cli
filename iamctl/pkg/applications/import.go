@@ -42,66 +42,75 @@ type AppConfig struct {
 
 func ImportAll(inputDirPath string) {
 
-	var importFilePath = "."
-	if inputDirPath != "" {
-		importFilePath = inputDirPath
-	}
-	importFilePath = importFilePath + "/Applications/"
+	importFilePath := inputDirPath + "/Applications/"
 
 	files, err := ioutil.ReadDir(importFilePath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	var appFilePath string
-	appList := getAppNames()
+	existingAppList := getDeployedAppNames()
 	for _, file := range files {
-		appFilePath = importFilePath + file.Name()
-		fileName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+		appFilePath := importFilePath + file.Name()
+		appName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+		appExists := checkIfAppExists(appFilePath, appName, existingAppList)
 
-		// Read the content of the file.
-		fileContent, err := ioutil.ReadFile(appFilePath)
-		if err != nil {
-			log.Fatal(err)
+		if !isAppExcluded(appName) {
+			importApp(appFilePath, appExists)
 		}
-
-		// Parse the YAML content.
-		var appConfig AppConfig
-		err = yaml.Unmarshal(fileContent, &appConfig)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		log.Println(appConfig.ApplicationName)
-
-		// Check if app exists.
-		var appExists bool
-		for _, app := range appList {
-			if app == appConfig.ApplicationName {
-				appExists = true
-				break
-			}
-		}
-
-		if appConfig.ApplicationName != fileName {
-			log.Println("Application name in the file " + appFilePath + " is not matching with the file name.")
-		}
-
-		importApp(appFilePath, appExists)
 	}
 }
 
-func importApp(importFilePath string, update bool) {
+func checkIfAppExists(appFilePath string, appName string, appList []string) bool {
 
-	var reqUrl = utils.SERVER_CONFIGS.ServerUrl + "/t/" + utils.SERVER_CONFIGS.TenantDomain + "/api/server/v1/applications/import"
-	var err error
+	appExists := false
 
-	filename := filepath.Base(importFilePath)
-	fileExtension := filepath.Ext(filename)
-	appName := strings.TrimSuffix(filename, fileExtension)
+	fileContent, err := ioutil.ReadFile(appFilePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Validate the YAML format.
+	var appConfig AppConfig
+	err = yaml.Unmarshal(fileContent, &appConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, app := range appList {
+		if app == appConfig.ApplicationName {
+			appExists = true
+			break
+		}
+	}
+	if appConfig.ApplicationName != appName {
+		log.Println("Application name in the file " + appFilePath + " is not matching with the file name.")
+	}
+	return appExists
+}
+
+func importApp(importFilePath string, isUpdate bool) {
+
+	fileBytes, err := ioutil.ReadFile(importFilePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	appName, _, _ := getAppFileInfo(importFilePath)
+
+	// Replace keywords according to the keyword mappings added in configs.
+	fileData := utils.ReplaceKeywords(fileBytes, appName)
+	sendImportRequest(isUpdate, importFilePath, fileData)
+
+}
+
+func sendImportRequest(isUpdate bool, importFilePath string, fileData string) {
+
+	reqUrl := utils.SERVER_CONFIGS.ServerUrl + "/t/" + utils.SERVER_CONFIGS.TenantDomain + "/api/server/v1/applications/import"
+	appName, filename, fileExtension := getAppFileInfo(importFilePath)
 
 	var requestMethod string
-	if update {
+	if isUpdate {
 		log.Println("Updating app: " + appName)
 		requestMethod = "PUT"
 	} else {
@@ -109,18 +118,8 @@ func importApp(importFilePath string, update bool) {
 		requestMethod = "POST"
 	}
 
-	body := new(bytes.Buffer)
-	writer := multipart.NewWriter(body)
-
-	fileBytes, err := ioutil.ReadFile(importFilePath)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Replace keywords according to the keyword mappings added in configs.
-	fileData := utils.ReplaceKeywords(fileBytes, appName)
-
 	var buf bytes.Buffer
+	var err error
 	_, err = io.WriteString(&buf, fileData)
 	if err != nil {
 		log.Fatal(err)
@@ -131,6 +130,8 @@ func importApp(importFilePath string, update bool) {
 
 	mimeType := mime.TypeByExtension(fileExtension)
 
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
 	part, err := writer.CreatePart(textproto.MIMEHeader{
 		"Content-Disposition": []string{fmt.Sprintf(`form-data; name="%s"; filename="%s"`, "file", filename)},
 		"Content-Type":        []string{mimeType},
@@ -184,18 +185,4 @@ func importApp(importFilePath string, update bool) {
 	case 200:
 		log.Println("Application updated successfully.")
 	}
-}
-
-func getAppNames() []string {
-
-	// Get the list of applications.
-	apps := getAppList()
-
-	// Extract application names from the list.
-	var appNames []string
-	for _, app := range apps {
-		appNames = append(appNames, app.Name)
-	}
-
-	return appNames
 }

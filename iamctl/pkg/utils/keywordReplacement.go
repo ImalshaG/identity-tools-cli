@@ -23,7 +23,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -72,24 +74,19 @@ func getAppKeywordMappings(appName string) (keywordMappings map[string]interface
 
 // Functions for keyword replacement during export
 
-var arrayIdentifiers = map[string]string{
-	"inboundAuthenticationRequestConfigs": "inboundAuthKey",
-	"spProperties":                        "name",
-	"subElement":                          "name",
-}
-
-func AddKeywords(exportedData []byte, localFilePath string) []byte {
+func AddKeywords(exportedData []byte, localFilePath string, appName string) []byte {
 
 	// Load local file data as a yaml object
 	localFileData, err := loadYAMLFile(localFilePath)
 	if err != nil {
-		log.Printf("failed to load YAML file: %v", err)
+		log.Printf("Local file %s is not available. Exported data will not be modified.", localFilePath)
 	}
 
+	// If the local file is empty or not available, return the exported data as it is.
 	if localFileData != nil {
 		// Get keyword locations in local file
 		keywordLocations := getKeywordLocations(localFileData, []string{})
-		fmt.Println("Keyword locations: ", keywordLocations)
+
 		// Load exported app data as a yaml object
 		var exportedYaml interface{}
 		err = yaml.Unmarshal(exportedData, &exportedYaml)
@@ -97,8 +94,11 @@ func AddKeywords(exportedData []byte, localFilePath string) []byte {
 		if err != nil {
 			fmt.Println("Error: ", err)
 		}
-		// Compare the fields with keywords
-		exportedYaml = compareFieldsWithKeywords(localFileData, exportedYaml, keywordLocations)
+
+		appKeywordMap := getAppKeywordMappings(appName)
+
+		// Compare the fields with keywords in the exported file and the local file and modify the exported file
+		exportedYaml = modifyFieldsWithKeywords(localFileData, exportedYaml, keywordLocations, appKeywordMap)
 
 		exportedData, err = yaml.Marshal(exportedYaml)
 		if err != nil {
@@ -156,20 +156,28 @@ func getKeywordLocations(fileData interface{}, path []string) map[string][]strin
 func resolvePathWithIdentifiers(arrayName string, element interface{}, identifiers map[string]string) string {
 
 	elementMap, ok := element.(map[interface{}]interface{})
+
 	if !ok {
 		fmt.Printf("cannot convert %T to map[string]string", element)
 	}
 	identifier := identifiers[arrayName]
+	// If an identifier is not defined for the array, use the default identifier "name".
+	if identifier == "" {
+		identifier = "name"
+	}
 	identifierValue := elementMap[identifier]
+	// TODO: Handle the case where the identifier value is a path
+	// identifierValue := GetValue(elementMap, identifier)
+	// TODO: Handle the case where the identifier value is empty
 	return fmt.Sprintf("[%s=%s]", identifier, identifierValue)
 }
 
-func compareFieldsWithKeywords(localFileData interface{}, exportedFileData interface{}, keywordLocations map[string][]string) interface{} {
+func modifyFieldsWithKeywords(localFileData interface{}, exportedFileData interface{}, keywordLocations map[string][]string, keywordMap map[string]interface{}) interface{} {
 
 	for location, keyword := range keywordLocations {
 
 		localValue := GetValue(localFileData, location)
-		localReplacedValue := replaceKeywords(localValue, keyword, TOOL_CONFIGS.KeywordMappings)
+		localReplacedValue := replaceKeywords(localValue, keyword, keywordMap)
 		exportedValue := GetValue(exportedFileData, location)
 
 		if exportedValue != localReplacedValue {
@@ -177,7 +185,7 @@ func compareFieldsWithKeywords(localFileData interface{}, exportedFileData inter
 			log.Println("Local Value with Keyword Replaced: ", localReplacedValue)
 			log.Println("Exported Value: ", exportedValue)
 		} else {
-			fmt.Printf("Values at %s are equal\n", location)
+			log.Printf("Keyword added at %s field\n", location)
 			ReplaceValue(exportedFileData, location, localValue)
 		}
 	}
@@ -204,6 +212,12 @@ func GetValue(data interface{}, key string) string {
 		default:
 			return ""
 		}
+	}
+	if reflect.TypeOf(data).Kind() == reflect.Int {
+		return strconv.Itoa(data.(int))
+	}
+	if data == nil {
+		return ""
 	}
 	return data.(string)
 }
