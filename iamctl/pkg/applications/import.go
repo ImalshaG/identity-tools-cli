@@ -1,5 +1,5 @@
 /**
-* Copyright (c) 2022, WSO2 LLC. (https://www.wso2.com) All Rights Reserved.
+* Copyright (c) 2023, WSO2 LLC. (https://www.wso2.com) All Rights Reserved.
 *
 * WSO2 LLC. licenses this file to you under the Apache License,
 * Version 2.0 (the "License"); you may not use this file except
@@ -29,16 +29,13 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/wso2-extensions/identity-tools-cli/iamctl/pkg/utils"
 	"gopkg.in/yaml.v2"
 )
-
-type AppConfig struct {
-	ApplicationName string `yaml:"applicationName"`
-}
 
 func ImportAll(inputDirPath string) {
 
@@ -53,28 +50,30 @@ func ImportAll(inputDirPath string) {
 	for _, file := range files {
 		appFilePath := importFilePath + file.Name()
 		appName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
-		appExists := checkIfAppExists(appFilePath, appName, existingAppList)
+		appExists, isValidFile := validateFile(appFilePath, appName, existingAppList)
 
-		if !isAppExcluded(appName) {
+		if isValidFile && !isAppExcluded(appName) {
 			importApp(appFilePath, appExists)
 		}
 	}
 }
 
-func checkIfAppExists(appFilePath string, appName string, appList []string) bool {
+func validateFile(appFilePath string, appName string, appList []string) (appExists bool, isValid bool) {
 
-	appExists := false
+	appExists = false
 
-	fileContent, err := ioutil.ReadFile(appFilePath)
+	fileContent, err := os.ReadFile(appFilePath)
 	if err != nil {
-		log.Fatal(err)
+		log.Println("Error when reading the file for app: ", appName, err)
+		return appExists, false
 	}
 
 	// Validate the YAML format.
 	var appConfig AppConfig
 	err = yaml.Unmarshal(fileContent, &appConfig)
 	if err != nil {
-		log.Fatal(err)
+		log.Println("Invalid file content for app: ", appName, err)
+		return appExists, false
 	}
 
 	for _, app := range appList {
@@ -84,14 +83,14 @@ func checkIfAppExists(appFilePath string, appName string, appList []string) bool
 		}
 	}
 	if appConfig.ApplicationName != appName {
-		log.Println("Application name in the file " + appFilePath + " is not matching with the file name.")
+		log.Println("Warning: Application name in the file " + appFilePath + " is not matching with the file name.")
 	}
-	return appExists
+	return appExists, true
 }
 
 func importApp(importFilePath string, isUpdate bool) {
 
-	fileBytes, err := ioutil.ReadFile(importFilePath)
+	fileBytes, err := os.ReadFile(importFilePath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -168,21 +167,16 @@ func sendImportRequest(isUpdate bool, importFilePath string, fileData string) {
 	}
 
 	statusCode := resp.StatusCode
-	switch statusCode {
-	case 401:
-		log.Println("Unauthorized access.\nPlease check your Username and password.")
-	case 400:
-		log.Println("Provided parameters are not in correct format.")
-	case 403:
-		log.Println("Forbidden request.")
-	case 409:
+	if statusCode == 201 {
+		log.Println("Application created successfully.")
+	} else if statusCode == 200 {
+		log.Println("Application updated successfully.")
+	} else if statusCode == 409 {
 		log.Println("An application with the same name already exists. Please rename the file accordingly.")
 		importApp(importFilePath, true)
-	case 500:
-		log.Println("Internal server error.")
-	case 201:
-		log.Println("Application imported successfully.")
-	case 200:
-		log.Println("Application updated successfully.")
+	} else if error, ok := utils.ErrorCodes[statusCode]; ok {
+		log.Println(error)
+	} else {
+		log.Println("Error while updating the application.")
 	}
 }

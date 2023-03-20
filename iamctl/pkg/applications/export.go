@@ -1,5 +1,5 @@
 /**
-* Copyright (c) 2022, WSO2 LLC. (https://www.wso2.com) All Rights Reserved.
+* Copyright (c) 2023, WSO2 LLC. (https://www.wso2.com) All Rights Reserved.
 *
 * WSO2 LLC. licenses this file to you under the Apache License,
 * Version 2.0 (the "License"); you may not use this file except
@@ -81,18 +81,7 @@ func exportApp(appId string, outputDirPath string, format string) {
 	defer resp.Body.Close()
 
 	statusCode := resp.StatusCode
-	switch statusCode {
-	case 401:
-		log.Println("Unauthorized access.\nPlease check your Username and password.")
-	case 400:
-		log.Println("Provided parameters are not in correct format.")
-	case 403:
-		log.Println("Forbidden request.")
-	case 404:
-		log.Println("Service Provider not found for the given ID.")
-	case 500:
-		log.Println("Internal server error.")
-	case 200:
+	if statusCode == 200 {
 		var attachmentDetail = resp.Header.Get("Content-Disposition")
 		_, params, err := mime.ParseMediaType(attachmentDetail)
 		if err != nil {
@@ -112,5 +101,9 @@ func exportApp(appId string, outputDirPath string, format string) {
 		modifiedFile := utils.AddKeywords(body1, exportedFile, appName)
 		ioutil.WriteFile(exportedFile, modifiedFile, 0644)
 		log.Println("Successfully created the export file : " + exportedFile)
+	} else if error, ok := utils.ErrorCodes[statusCode]; ok {
+		log.Println(error)
+	} else {
+		log.Println("Error while exporting the application")
 	}
 }

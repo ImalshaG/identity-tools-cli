@@ -1,5 +1,5 @@
 /**
-* Copyright (c) 2022, WSO2 LLC. (https://www.wso2.com) All Rights Reserved.
+* Copyright (c) 2023, WSO2 LLC. (https://www.wso2.com) All Rights Reserved.
 *
 * WSO2 LLC. licenses this file to you under the Apache License,
 * Version 2.0 (the "License"); you may not use this file except
@@ -50,9 +50,8 @@ type ServerConfigs struct {
 }
 
 type ToolConfigs struct {
-	ServerConfigFileLocation string                 `json:"SERVER_CONFIG_FILE_LOCATION"`
-	KeywordMappings          map[string]interface{} `json:"KEYWORD_MAPPINGS"`
-	ApplicationConfigs       map[string]interface{} `json:"APPLICATIONS"`
+	KeywordMappings    map[string]interface{} `json:"KEYWORD_MAPPINGS"`
+	ApplicationConfigs map[string]interface{} `json:"APPLICATIONS"`
 }
 
 type Application struct {
@@ -79,7 +78,6 @@ func LoadConfigs(toolConfigFile string) (baseDir string) {
 	fileName := filepath.Base(toolConfigFile)
 	baseDir = filepath.Dir(configDir)
 	serverConfigFile := filepath.Join(configDir, "ServerConfigs", fileName)
-	fmt.Println("Server config file location: " + serverConfigFile)
 
 	// Load configs from files
 	SERVER_CONFIGS = loadServerConfigsFromFile(serverConfigFile)
@@ -103,6 +101,13 @@ func loadServerConfigsFromFile(configFilePath string) (serverConfigs ServerConfi
 	}
 	fmt.Println("Server configs loaded succesfully from the config file.")
 
+	// Set tenant domain if not defined in the config file
+	if serverConfigs.TenantDomain == "" {
+		log.Println("Tenant domain is not defined in the config file. Using the default tenant domain: carbon.super")
+		serverConfigs.TenantDomain = "carbon.super"
+	}
+
+	// Get access token
 	serverConfigs.Token = getAccessToken(serverConfigs)
 	fmt.Println("Access Token recieved succesfully.")
 
