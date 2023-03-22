@@ -101,3 +101,11 @@ func getAppList() (spIdList []utils.Application) {
 	}
 	return spIdList
 }
+
+func getAppKeywordMapping(appName string) map[string]interface{} {
+
+	if utils.TOOL_CONFIGS.ApplicationConfigs != nil {
+		return utils.ResolveAdvancedKeywordMapping(appName, utils.TOOL_CONFIGS.ApplicationConfigs)
+	}
+	return utils.TOOL_CONFIGS.KeywordMappings
+}

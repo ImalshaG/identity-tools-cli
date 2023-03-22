@@ -99,7 +99,8 @@ func exportApp(appId string, outputDirPath string, format string) {
 
 		// Add keywords to the exported file according to the keyword locations in the local file.
 		appName, _, _ := getAppFileInfo(exportedFile)
-		modifiedFile := utils.AddKeywords(body1, exportedFile, appName)
+		appKeywordMapping := getAppKeywordMapping(appName)
+		modifiedFile := utils.AddKeywords(body1, exportedFile, appKeywordMapping)
 
 		ioutil.WriteFile(exportedFile, modifiedFile, 0644)
 		log.Println("Successfully created the export file : " + exportedFile)
