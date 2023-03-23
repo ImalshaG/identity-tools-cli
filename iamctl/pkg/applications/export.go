@@ -95,15 +95,22 @@ func exportApp(appId string, outputDirPath string, format string) {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		exportedFile := outputDirPath + fileName
+		exportedFileName := outputDirPath + fileName
 
 		// Add keywords to the exported file according to the keyword locations in the local file.
-		appName, _, _ := getAppFileInfo(exportedFile)
+		appName, _, _ := getAppFileInfo(exportedFileName)
 		appKeywordMapping := getAppKeywordMapping(appName)
-		modifiedFile := utils.AddKeywords(body1, exportedFile, appKeywordMapping)
+		// Load local file data as a yaml object
+		localFileData, err := ioutil.ReadFile(exportedFileName)
+		modifiedFile := body1
+		if err != nil {
+			log.Printf("Local file not found at %s. Skip adding keywords to exported data.", exportedFileName)
+		} else {
+			modifiedFile = utils.AddKeywords(body1, localFileData, appKeywordMapping)
+		}
 
-		ioutil.WriteFile(exportedFile, modifiedFile, 0644)
-		log.Println("Successfully created the export file : " + exportedFile)
+		ioutil.WriteFile(exportedFileName, modifiedFile, 0644)
+		log.Println("Successfully created the export file : " + exportedFileName)
 	} else if error, ok := utils.ErrorCodes[statusCode]; ok {
 		log.Println(error)
 	} else {
