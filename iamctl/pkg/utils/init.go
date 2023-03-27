@@ -74,17 +74,49 @@ var TOOL_CONFIGS ToolConfigs
 
 func LoadConfigs(envConfigPath string) (baseDir string) {
 
-	baseDir = filepath.Dir(filepath.Dir(envConfigPath))
-	serverConfigFile := filepath.Join(envConfigPath, "serverConfig.json")
-	toolConfigFile := filepath.Join(envConfigPath, "toolConfig.json")
+	var toolConfigFile string
+	if envConfigPath == "" {
+		log.Println("Loading configs from environment variables")
+		toolConfigFile = loadConfigsFromEnvVar()
+		baseDir = filepath.Dir(filepath.Dir(filepath.Dir(toolConfigFile)))
+	} else {
+		log.Println("Loading configs from config files")
+		baseDir = filepath.Dir(filepath.Dir(envConfigPath))
+		serverConfigFile := filepath.Join(envConfigPath, SERVER_CONFIG_FILE)
+		toolConfigFile = filepath.Join(envConfigPath, TOOL_CONFIG_FILE)
 
-	// Load configs from files
-	SERVER_CONFIGS = loadServerConfigsFromFile(serverConfigFile)
+		// Load configs from files
+		SERVER_CONFIGS = loadServerConfigsFromFile(serverConfigFile)
+	}
 	TOOL_CONFIGS = loadToolConfigsFromFile(toolConfigFile)
+	fmt.Println("SERVER_CONFIGS: ", SERVER_CONFIGS)
+	fmt.Println("TOOL_CONFIGS: ", TOOL_CONFIGS)
+	fmt.Println(baseDir)
 
 	return baseDir
+
 }
 
+func loadConfigsFromEnvVar() string {
+
+	// Load server configs from environment variables
+	SERVER_CONFIGS.ServerUrl = os.Getenv(SERVER_URL_CONFIG)
+	SERVER_CONFIGS.ClientId = os.Getenv(CLIENT_ID_CONFIG)
+	SERVER_CONFIGS.ClientSecret = os.Getenv(CLIENT_SECRET_CONFIG)
+	SERVER_CONFIGS.TenantDomain = os.Getenv(TENANT_DOMAIN_CONFIG)
+	SERVER_CONFIGS.Username = os.Getenv(USERNAME_CONFIG)
+	SERVER_CONFIGS.Password = os.Getenv(PASSWORD_CONFIG)
+
+	// Set tenant domain if not defined in the config file
+	if SERVER_CONFIGS.TenantDomain == "" {
+		log.Println("Tenant domain is not defined in the config file. Using the default tenant domain: carbon.super")
+		SERVER_CONFIGS.TenantDomain = "carbon.super"
+	}
+
+	// Load tool config file path from environment variables
+	toolConfigPath := os.Getenv("TOOL_CONFIG_PATH")
+	return toolConfigPath
+}
 func loadServerConfigsFromFile(configFilePath string) (serverConfigs ServerConfigs) {
 
 	configFile, err := os.Open(configFilePath)
@@ -109,7 +141,7 @@ func loadServerConfigsFromFile(configFilePath string) (serverConfigs ServerConfi
 	// Get access token
 	serverConfigs.Token = getAccessToken(serverConfigs)
 	fmt.Println("Access Token recieved succesfully.")
-
+	fmt.Println("Server configs: ", serverConfigs)
 	return serverConfigs
 }
 

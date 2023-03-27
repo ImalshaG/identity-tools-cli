@@ -18,8 +18,28 @@
 
 package utils
 
-var KEYWORD_MAPPINGS_PROPERTY = "KEYWORD_MAPPINGS"
+// Resource type names
+var APPLICATIONS_CONFIG = "APPLICATIONS"
 
+// Tool configs
+var KEYWORD_MAPPINGS_CONFIG = "KEYWORD_MAPPINGS"
+var EXCLUDE_CONFIG = "EXCLUDE"
+var INCLUDE_ONLY_CONFIG = "INCLUDE_ONLY"
+
+// Server configs
+var SERVER_URL_CONFIG = "SERVER_URL"
+var CLIENT_ID_CONFIG = "CLIENT_ID"
+var CLIENT_SECRET_CONFIG = "CLIENT_SECRET"
+var TENANT_DOMAIN_CONFIG = "TENANT_DOMAIN"
+var USERNAME_CONFIG = "ADMIN_USERNAME"
+var PASSWORD_CONFIG = "ADMIN_PASSWORD"
+var TOKEN_CONFIG = "TOKEN"
+
+// Config file names
+var SERVER_CONFIG_FILE = "serverConfig.json"
+var TOOL_CONFIG_FILE = "toolConfig.json"
+
+// Error codes
 var ErrorCodes = map[int]string{
 
 	400: "Bad request. Provided parameters are not in correct format.",
